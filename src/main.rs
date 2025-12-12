@@ -106,6 +106,9 @@ fn run_event_loop(
 
 /// Handle keys in navigation mode
 fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) -> Result<()> {
+    // Check search timeout on every key
+    app.check_search_timeout();
+
     // Check for Alt+key combinations
     if modifiers.contains(KeyModifiers::ALT) {
         match code {
@@ -116,13 +119,54 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
         return Ok(());
     }
 
+    // In normal mode, handle fuzzy search for printable characters
+    if app.mode == AppMode::Normal {
+        match code {
+            // Fuzzy search - letters, numbers, and common filename chars
+            KeyCode::Char(c) if c.is_ascii_alphanumeric() || c == '_' || c == '-' => {
+                app.search_add_char(c);
+                return Ok(());
+            }
+            // Backspace removes from search buffer
+            KeyCode::Backspace => {
+                if !app.search_buffer.is_empty() {
+                    app.search_backspace();
+                    return Ok(());
+                }
+            }
+            // ESC clears search buffer in normal mode
+            KeyCode::Esc => {
+                if !app.search_buffer.is_empty() {
+                    app.clear_search();
+                    return Ok(());
+                }
+            }
+            _ => {}
+        }
+    }
+
     match code {
-        // Navigation
-        KeyCode::Char('j') | KeyCode::Down => app.navigate_down(),
-        KeyCode::Char('k') | KeyCode::Up => app.navigate_up(),
-        KeyCode::Left => app.navigate_left(),
-        KeyCode::Right => app.navigate_right(),
-        KeyCode::Char(' ') => app.toggle_selected(),
+        // Navigation (clears search buffer)
+        KeyCode::Char('j') | KeyCode::Down => {
+            app.clear_search();
+            app.navigate_down();
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            app.clear_search();
+            app.navigate_up();
+        }
+        KeyCode::Left => {
+            app.clear_search();
+            app.navigate_left();
+        }
+        KeyCode::Right => {
+            app.clear_search();
+            app.navigate_right();
+        }
+        KeyCode::Char(' ') => {
+            app.clear_search();
+            app.toggle_selected();
+        }
         KeyCode::Char('.') => app.toggle_dotfiles(),
 
         // Mode switching
@@ -153,13 +197,22 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
             app.delete_selected()?;
         }
         KeyCode::Char('f') if app.mode == AppMode::Git => {
-            app.fetch()?;
+            match app.fetch() {
+                Ok(()) => {}
+                Err(e) => app.set_status(format!("Fetch failed: {}", e)),
+            }
         }
         KeyCode::Char('l') if app.mode == AppMode::Git => {
-            app.pull()?;
+            match app.pull() {
+                Ok(()) => {}
+                Err(e) => app.set_status(format!("Pull failed: {}", e)),
+            }
         }
         KeyCode::Char('p') if app.mode == AppMode::Git => {
-            app.push()?;
+            match app.push() {
+                Ok(()) => {}
+                Err(e) => app.set_status(format!("Push failed: {}", e)),
+            }
         }
         KeyCode::Char('m') if app.mode == AppMode::Git => {
             app.enter_commit_mode(false);
@@ -214,70 +267,77 @@ fn handle_rename_key(app: &mut App, code: KeyCode) -> Result<()> {
 
 /// Handle keys in commit mode
 fn handle_commit_key(app: &mut App, code: KeyCode) -> Result<()> {
-    match code {
-        KeyCode::Esc => app.cancel_commit(),
-        KeyCode::Enter => app.apply_commit()?,
-        KeyCode::Backspace => {
-            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
-                if *cursor > 0 {
-                    buffer.remove(*cursor - 1);
-                    *cursor -= 1;
+    use crate::types::CommitStatus;
+
+    // Get current status
+    let status = if let InputMode::Commit { status, .. } = &app.input_mode {
+        status.clone()
+    } else {
+        return Ok(());
+    };
+
+    match status {
+        CommitStatus::Editing => {
+            // Normal editing mode
+            match code {
+                KeyCode::Esc => app.cancel_commit(),
+                KeyCode::Enter => app.apply_commit()?,
+                KeyCode::Backspace => {
+                    if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            buffer.remove(*cursor - 1);
+                            *cursor -= 1;
+                        }
+                    }
                 }
-            }
-        }
-        KeyCode::Left => {
-            if let InputMode::Commit { cursor, .. } = &mut app.input_mode {
-                if *cursor > 0 {
-                    *cursor -= 1;
+                KeyCode::Left => {
+                    if let InputMode::Commit { cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            *cursor -= 1;
+                        }
+                    }
                 }
-            }
-        }
-        KeyCode::Right => {
-            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
-                if *cursor < buffer.len() {
-                    *cursor += 1;
+                KeyCode::Right => {
+                    if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
+                        if *cursor < buffer.len() {
+                            *cursor += 1;
+                        }
+                    }
                 }
+                KeyCode::Char(c) => {
+                    if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
+                        buffer.insert(*cursor, c);
+                        *cursor += 1;
+                    }
+                }
+                _ => {}
             }
         }
-        KeyCode::Char(c) => {
-            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
-                buffer.insert(*cursor, c);
-                *cursor += 1;
-            }
+        CommitStatus::Committing => {
+            // Don't respond to keys while committing
         }
-        _ => {}
+        CommitStatus::Success | CommitStatus::Failed => {
+            // Any key closes the modal
+            app.close_commit();
+        }
     }
     Ok(())
 }
 
-/// Handle keys in search mode
+/// Handle keys in search mode (legacy - not currently used)
 fn handle_search_key(app: &mut App, code: KeyCode) -> Result<()> {
     match code {
         KeyCode::Esc => {
             app.input_mode = InputMode::Navigation;
         }
         KeyCode::Backspace => {
-            // Extract, modify, and reassign to avoid borrow conflicts
             if let InputMode::Search { buffer } = &mut app.input_mode {
                 buffer.pop();
             }
-            // Now do fuzzy jump with cloned buffer
-            if let InputMode::Search { buffer } = &app.input_mode {
-                if !buffer.is_empty() {
-                    let pattern = buffer.clone();
-                    app.fuzzy_jump(&pattern);
-                }
-            }
         }
         KeyCode::Char(c) => {
-            // Extract, modify, and reassign to avoid borrow conflicts
             if let InputMode::Search { buffer } = &mut app.input_mode {
                 buffer.push(c);
-            }
-            // Now do fuzzy jump with cloned buffer
-            if let InputMode::Search { buffer } = &app.input_mode {
-                let pattern = buffer.clone();
-                app.fuzzy_jump(&pattern);
             }
         }
         _ => {}

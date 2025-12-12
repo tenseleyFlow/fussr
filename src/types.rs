@@ -171,13 +171,22 @@ impl AppMode {
     }
 }
 
+/// Status of commit operation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CommitStatus {
+    Editing,
+    Committing,
+    Success,
+    Failed,
+}
+
 /// Input mode for special states
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputMode {
     Navigation,
     Rename { buffer: String, cursor: usize },
     Search { buffer: String },
-    Commit { buffer: String, cursor: usize, amend: bool },
+    Commit { buffer: String, cursor: usize, amend: bool, status: CommitStatus },
     Confirm { message: String, action: ConfirmAction },
 }
 

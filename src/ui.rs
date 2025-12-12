@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::{AppMode, InputMode, SelectableItem};
+use crate::types::{AppMode, CommitStatus, InputMode, SelectableItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -24,13 +24,13 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_help(frame, app, chunks[2]);
 
     // Draw modal overlay if in commit mode
-    if let InputMode::Commit { buffer, cursor, amend } = &app.input_mode {
-        draw_commit_modal(frame, buffer, *cursor, *amend);
+    if let InputMode::Commit { buffer, cursor, amend, status } = &app.input_mode {
+        draw_commit_modal(frame, buffer, *cursor, *amend, status);
     }
 }
 
 /// Draw commit message modal
-fn draw_commit_modal(frame: &mut Frame, buffer: &str, cursor: usize, amend: bool) {
+fn draw_commit_modal(frame: &mut Frame, buffer: &str, cursor: usize, amend: bool, status: &CommitStatus) {
     let area = frame.area();
 
     // Center the modal
@@ -44,27 +44,66 @@ fn draw_commit_modal(frame: &mut Frame, buffer: &str, cursor: usize, amend: bool
     // Clear area behind modal
     frame.render_widget(Clear, modal_area);
 
-    // Title based on amend
-    let title = if amend { " Amend Commit " } else { " Commit " };
+    // Title and border color based on status
+    let (title, border_color) = match status {
+        CommitStatus::Editing => {
+            let t = if amend { " Amend Commit " } else { " Commit " };
+            (t, Color::Green)
+        }
+        CommitStatus::Committing => (" Committing... ", Color::Yellow),
+        CommitStatus::Success => (" ✓ Committed ", Color::Green),
+        CommitStatus::Failed => (" ✗ Failed ", Color::Red),
+    };
 
     let block = Block::default()
         .title(title)
         .borders(Borders::ALL)
-        .border_style(Style::default().fg(Color::Green));
+        .border_style(Style::default().fg(border_color));
 
-    // Build input line with cursor
-    let display_text = if cursor >= buffer.len() {
-        format!("{}█", buffer)
-    } else {
-        format!("{}█{}", &buffer[..cursor], &buffer[cursor..])
+    // Content based on status
+    let content = match status {
+        CommitStatus::Editing => {
+            // Build input line with cursor
+            let display_text = if cursor >= buffer.len() {
+                format!("{}█", buffer)
+            } else {
+                format!("{}█{}", &buffer[..cursor], &buffer[cursor..])
+            };
+            vec![
+                Line::from(""),
+                Line::from(Span::raw(display_text)),
+            ]
+        }
+        CommitStatus::Committing => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Committing changes...",
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        CommitStatus::Success => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  ✓ Changes committed successfully!",
+                    Style::default().fg(Color::Green),
+                )),
+            ]
+        }
+        CommitStatus::Failed => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  ✗ Commit failed (nothing staged?)",
+                    Style::default().fg(Color::Red),
+                )),
+            ]
+        }
     };
 
-    let input = Paragraph::new(vec![
-        Line::from(""),
-        Line::from(Span::raw(display_text)),
-    ])
-    .block(block);
-
+    let input = Paragraph::new(content).block(block);
     frame.render_widget(input, modal_area);
 }
 
@@ -82,6 +121,15 @@ fn draw_header(frame: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled(
             "[ GIT MODE ]",
             Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    // Show search buffer if active
+    if !app.search_buffer.is_empty() {
+        spans.push(Span::raw(" "));
+        spans.push(Span::styled(
+            format!("/{}", &app.search_buffer),
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
         ));
     }
 

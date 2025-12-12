@@ -276,26 +276,30 @@ impl GitRepo {
         Ok(())
     }
 
-    /// Create a commit with the given message
+    /// Create a commit with the given message (captures output to not corrupt TUI)
     pub fn commit(&self, message: &str) -> Result<()> {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["commit", "-m", message])
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
             Err(FussrError::Git(git2::Error::from_str("Failed to commit")))
         }
     }
 
-    /// Amend the last commit
+    /// Amend the last commit (captures output to not corrupt TUI)
     pub fn commit_amend(&self, message: &str) -> Result<()> {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["commit", "--amend", "-m", message])
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
             Err(FussrError::Git(git2::Error::from_str("Failed to amend commit")))
@@ -316,39 +320,45 @@ impl GitRepo {
         }
     }
 
-    /// Fetch from remote
+    /// Fetch from remote (captures output to not corrupt TUI)
     pub fn fetch(&self) -> Result<()> {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["fetch"])
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
             Err(FussrError::Git(git2::Error::from_str("Failed to fetch")))
         }
     }
 
-    /// Pull from remote
+    /// Pull from remote (captures output to not corrupt TUI)
     pub fn pull(&self) -> Result<()> {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["pull"])
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
             Err(FussrError::Git(git2::Error::from_str("Failed to pull")))
         }
     }
 
-    /// Push to remote
+    /// Push to remote (captures output to not corrupt TUI)
     pub fn push(&self) -> Result<()> {
-        let status = Command::new("git")
+        let output = Command::new("git")
             .args(["push"])
-            .status()?;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
 
-        if status.success() {
+        if output.status.success() {
             Ok(())
         } else {
             Err(FussrError::Git(git2::Error::from_str("Failed to push")))

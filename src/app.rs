@@ -3,6 +3,7 @@ use crate::git::GitRepo;
 use crate::tree::{build_tree, flatten_tree, toggle_expanded};
 use crate::types::{AppMode, FileEntry, InputMode, SelectableItem, TreeNode};
 use std::path::PathBuf;
+use std::time::Instant;
 
 /// Main application state
 pub struct App {
@@ -32,6 +33,10 @@ pub struct App {
     pub should_quit: bool,
     /// Status message to display
     pub status_message: Option<String>,
+    /// Fuzzy search buffer
+    pub search_buffer: String,
+    /// Last search keystroke time (for timeout)
+    pub last_search_time: Option<Instant>,
 }
 
 impl App {
@@ -55,6 +60,8 @@ impl App {
             input_mode: InputMode::Navigation,
             should_quit: false,
             status_message: None,
+            search_buffer: String::new(),
+            last_search_time: None,
         };
 
         app.refresh_files()?;
@@ -411,26 +418,60 @@ impl App {
             buffer: initial_buffer,
             cursor,
             amend,
+            status: crate::types::CommitStatus::Editing,
         };
     }
 
-    /// Apply commit
+    /// Start the commit process (show "Committing..." state)
+    pub fn start_commit(&mut self) {
+        if let InputMode::Commit { status, .. } = &mut self.input_mode {
+            *status = crate::types::CommitStatus::Committing;
+        }
+    }
+
+    /// Apply commit and update status
     pub fn apply_commit(&mut self) -> Result<()> {
-        if let InputMode::Commit { buffer, amend, .. } = &self.input_mode {
-            let message = buffer.trim();
-            if !message.is_empty() {
-                if *amend {
-                    self.repo.commit_amend(message)?;
-                    self.set_status("Commit amended".to_string());
-                } else {
-                    self.repo.commit(message)?;
-                    self.set_status("Committed".to_string());
+        // Extract values we need before modifying
+        let (message, amend) = if let InputMode::Commit { buffer, amend, .. } = &self.input_mode {
+            (buffer.trim().to_string(), *amend)
+        } else {
+            return Ok(());
+        };
+
+        if message.is_empty() {
+            self.input_mode = InputMode::Navigation;
+            return Ok(());
+        }
+
+        // Perform the commit
+        let result = if amend {
+            self.repo.commit_amend(&message)
+        } else {
+            self.repo.commit(&message)
+        };
+
+        // Update status based on result
+        match result {
+            Ok(()) => {
+                if let InputMode::Commit { status, .. } = &mut self.input_mode {
+                    *status = crate::types::CommitStatus::Success;
                 }
+                self.set_status("Committed".to_string());
                 self.refresh_files()?;
             }
+            Err(_) => {
+                if let InputMode::Commit { status, .. } = &mut self.input_mode {
+                    *status = crate::types::CommitStatus::Failed;
+                }
+            }
         }
-        self.input_mode = InputMode::Navigation;
+
         Ok(())
+    }
+
+    /// Close commit modal and return to navigation
+    pub fn close_commit(&mut self) {
+        self.input_mode = InputMode::Navigation;
     }
 
     /// Cancel commit mode
@@ -438,57 +479,185 @@ impl App {
         self.input_mode = InputMode::Navigation;
     }
 
-    /// Fuzzy search and jump to match
-    pub fn fuzzy_jump(&mut self, pattern: &str) {
-        if pattern.is_empty() {
+    /// Check if search timeout has elapsed (0.5 seconds) and reset if needed
+    pub fn check_search_timeout(&mut self) {
+        if let Some(last_time) = self.last_search_time {
+            if last_time.elapsed().as_millis() > 500 {
+                self.search_buffer.clear();
+                self.last_search_time = None;
+            }
+        }
+    }
+
+    /// Add a character to the search buffer and jump to match
+    pub fn search_add_char(&mut self, c: char) {
+        // Check timeout first - if elapsed, start fresh
+        self.check_search_timeout();
+
+        // Add character to buffer
+        if self.search_buffer.len() < 32 {
+            self.search_buffer.push(c);
+            self.last_search_time = Some(Instant::now());
+
+            // Jump to best match
+            self.fuzzy_jump_to_match();
+        }
+    }
+
+    /// Remove last character from search buffer
+    pub fn search_backspace(&mut self) {
+        if !self.search_buffer.is_empty() {
+            self.search_buffer.pop();
+            self.last_search_time = Some(Instant::now());
+
+            if !self.search_buffer.is_empty() {
+                self.fuzzy_jump_to_match();
+            }
+        }
+    }
+
+    /// Clear the search buffer
+    pub fn clear_search(&mut self) {
+        self.search_buffer.clear();
+        self.last_search_time = None;
+    }
+
+    /// Jump to the best matching item using fzf-style scoring
+    fn fuzzy_jump_to_match(&mut self) {
+        if self.search_buffer.is_empty() || self.items.is_empty() {
             return;
         }
 
-        let pattern_lower = pattern.to_lowercase();
+        let pattern = self.search_buffer.to_lowercase();
         let mut best_idx = self.selected;
-        let mut best_score = 0;
+        let mut best_score: i32 = 0;
 
+        // Check current item first - if exact match, stay on it
+        if let Some(item) = self.items.get(self.selected) {
+            let current_score = fuzzy_match_score(&pattern, &item.name.to_lowercase());
+            if current_score >= 10000 {
+                return; // Exact match - stay here
+            }
+            best_score = current_score;
+        }
+
+        // PASS 1: Search for basename matches (file/folder names)
         for (i, item) in self.items.iter().enumerate() {
-            let score = fuzzy_score(&pattern_lower, &item.name.to_lowercase());
+            if i == self.selected {
+                continue;
+            }
+            let score = fuzzy_match_score(&pattern, &item.name.to_lowercase());
             if score > best_score {
                 best_score = score;
                 best_idx = i;
             }
         }
 
+        // If we found a good basename match (prefix or exact), use it
+        if best_score >= 5000 {
+            self.selected = best_idx;
+            return;
+        }
+
+        // PASS 2: Search full paths if no good basename match
+        for (i, item) in self.items.iter().enumerate() {
+            if i == self.selected {
+                continue;
+            }
+            let path_str = item.path.to_string_lossy().to_lowercase();
+            let score = fuzzy_match_score(&pattern, &path_str);
+            if score > best_score {
+                best_score = score;
+                best_idx = i;
+            }
+        }
+
+        // Jump to best match if any was found
         if best_score > 0 {
             self.selected = best_idx;
         }
     }
 }
 
-/// Simple fuzzy matching score
-fn fuzzy_score(pattern: &str, text: &str) -> usize {
-    if text.starts_with(pattern) {
-        return 1000 + (100 - text.len()); // Prefix match bonus
+/// Fuzzy matching with fzf-style scoring
+/// Returns a score (higher is better), 0 means no match
+fn fuzzy_match_score(pattern: &str, text: &str) -> i32 {
+    if pattern.is_empty() {
+        return 1;
     }
 
-    let mut score = 0;
-    let mut pattern_idx = 0;
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let mut consecutive = 0;
+    // Exact match (highest score)
+    if pattern == text {
+        return 10000;
+    }
 
-    for (i, c) in text.chars().enumerate() {
-        if pattern_idx < pattern_chars.len() && c == pattern_chars[pattern_idx] {
-            score += 10 + consecutive * 5;
-            if i == 0 {
-                score += 20; // Start match bonus
+    // Prefix match (very high score)
+    if text.starts_with(pattern) {
+        return 5000;
+    }
+
+    // Fuzzy match with scoring
+    let pattern_chars: Vec<char> = pattern.chars().collect();
+    let text_chars: Vec<char> = text.chars().collect();
+
+    let mut score: i32 = 0;
+    let mut pattern_idx = 0;
+    let mut consecutive_bonus: i32 = 0;
+    let mut is_consecutive = false;
+    let mut match_started = false;
+
+    for (text_idx, &c) in text_chars.iter().enumerate() {
+        if pattern_idx >= pattern_chars.len() {
+            break;
+        }
+
+        if c == pattern_chars[pattern_idx] {
+            match_started = true;
+
+            // Base score for each matched character
+            score += 100;
+
+            // Bonus for consecutive characters
+            if is_consecutive {
+                consecutive_bonus += 1;
+                score += consecutive_bonus * 50;
+            } else {
+                consecutive_bonus = 1;
+                is_consecutive = true;
             }
-            consecutive += 1;
+
+            // Bonus for matching at start of text
+            if text_idx == 0 {
+                score += 200;
+            }
+
+            // Bonus for matching after separator (word boundary)
+            if text_idx > 0 {
+                let prev = text_chars[text_idx - 1];
+                if prev == '/' || prev == '_' || prev == '-' || prev == '.' {
+                    score += 150;
+                }
+            }
+
             pattern_idx += 1;
         } else {
-            consecutive = 0;
+            // Reset consecutive bonus
+            is_consecutive = false;
+            consecutive_bonus = 0;
+            // Small penalty for gaps
+            if match_started {
+                score -= 1;
+            }
         }
     }
 
-    if pattern_idx == pattern_chars.len() {
-        score
-    } else {
-        0 // Not all chars matched
+    // No match if we didn't find all pattern characters
+    if pattern_idx < pattern_chars.len() {
+        return 0;
     }
+
+    // Penalty for longer strings (prefer concise matches)
+    score -= text.len() as i32;
+
+    score.max(1) // Ensure positive score if we matched
 }
