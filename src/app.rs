@@ -393,6 +393,20 @@ impl App {
         self.input_mode = InputMode::Navigation;
     }
 
+    /// Force show push modal (for testing)
+    pub fn show_push_modal(&mut self) {
+        let remotes = self.repo.get_remotes();
+        if remotes.is_empty() {
+            self.set_status("No remotes configured".to_string());
+            return;
+        }
+        self.input_mode = InputMode::Push {
+            remotes,
+            selected: 0,
+            status: crate::types::PushStatus::SelectRemote,
+        };
+    }
+
     /// Create a commit
     pub fn commit(&mut self, message: &str) -> Result<()> {
         self.repo.commit(message)?;

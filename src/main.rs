@@ -215,6 +215,10 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
                 Err(e) => app.set_status(format!("Push failed: {}", e)),
             }
         }
+        KeyCode::Char('P') if app.mode == AppMode::Git => {
+            // Debug: Force show push modal regardless of upstream status
+            app.show_push_modal();
+        }
         KeyCode::Char('m') if app.mode == AppMode::Git => {
             app.enter_commit_mode(false);
         }
