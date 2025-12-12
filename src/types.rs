@@ -180,6 +180,15 @@ pub enum CommitStatus {
     Failed,
 }
 
+/// Status of push operation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PushStatus {
+    SelectRemote,
+    Pushing,
+    Success,
+    Failed(String),
+}
+
 /// Input mode for special states
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputMode {
@@ -187,6 +196,7 @@ pub enum InputMode {
     Rename { buffer: String, cursor: usize },
     Search { buffer: String },
     Commit { buffer: String, cursor: usize, amend: bool, status: CommitStatus },
+    Push { remotes: Vec<String>, selected: usize, status: PushStatus },
     Confirm { message: String, action: ConfirmAction },
 }
 

@@ -91,6 +91,7 @@ fn run_event_loop(
                     InputMode::Rename { .. } => handle_rename_key(app, key.code)?,
                     InputMode::Commit { .. } => handle_commit_key(app, key.code)?,
                     InputMode::Search { .. } => handle_search_key(app, key.code)?,
+                    InputMode::Push { .. } => handle_push_key(app, key.code)?,
                     InputMode::Confirm { .. } => handle_confirm_key(app, key.code)?,
                 }
 
@@ -321,6 +322,62 @@ fn handle_commit_key(app: &mut App, code: KeyCode) -> Result<()> {
             app.close_commit();
         }
     }
+    Ok(())
+}
+
+/// Handle keys in push mode
+fn handle_push_key(app: &mut App, code: KeyCode) -> Result<()> {
+    use crate::types::PushStatus;
+
+    // Get current status
+    let status = if let InputMode::Push { status, .. } = &app.input_mode {
+        status.clone()
+    } else {
+        return Ok(());
+    };
+
+    match status {
+        PushStatus::SelectRemote => {
+            match code {
+                KeyCode::Esc => app.close_push(),
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let InputMode::Push { remotes, selected, .. } = &mut app.input_mode {
+                        if *selected + 1 < remotes.len() {
+                            *selected += 1;
+                        }
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let InputMode::Push { selected, .. } = &mut app.input_mode {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    // Get the selected remote and push
+                    let remote = if let InputMode::Push { remotes, selected, .. } = &app.input_mode {
+                        remotes.get(*selected).cloned()
+                    } else {
+                        None
+                    };
+
+                    if let Some(remote) = remote {
+                        app.push_to_remote(&remote)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        PushStatus::Pushing => {
+            // Don't respond to keys while pushing
+        }
+        PushStatus::Success | PushStatus::Failed(_) => {
+            // Any key closes the modal
+            app.close_push();
+        }
+    }
+
     Ok(())
 }
 

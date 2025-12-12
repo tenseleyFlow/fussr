@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::{AppMode, CommitStatus, InputMode, SelectableItem};
+use crate::types::{AppMode, CommitStatus, InputMode, PushStatus, SelectableItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -26,6 +26,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Draw modal overlay if in commit mode
     if let InputMode::Commit { buffer, cursor, amend, status } = &app.input_mode {
         draw_commit_modal(frame, buffer, *cursor, *amend, status);
+    }
+
+    // Draw modal overlay if in push mode
+    if let InputMode::Push { remotes, selected, status } = &app.input_mode {
+        draw_push_modal(frame, remotes, *selected, status, &app.branch_name);
     }
 }
 
@@ -105,6 +110,95 @@ fn draw_commit_modal(frame: &mut Frame, buffer: &str, cursor: usize, amend: bool
 
     let input = Paragraph::new(content).block(block);
     frame.render_widget(input, modal_area);
+}
+
+/// Draw push remote selection modal
+fn draw_push_modal(frame: &mut Frame, remotes: &[String], selected: usize, status: &PushStatus, branch: &str) {
+    let area = frame.area();
+
+    // Modal size based on content
+    let modal_height = match status {
+        PushStatus::SelectRemote => (remotes.len() + 4).min(12) as u16,
+        _ => 5,
+    };
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    // Clear area behind modal
+    frame.render_widget(Clear, modal_area);
+
+    // Title and border color based on status
+    let (title, border_color) = match status {
+        PushStatus::SelectRemote => (" Push - Select Remote ", Color::Cyan),
+        PushStatus::Pushing => (" Pushing... ", Color::Yellow),
+        PushStatus::Success => (" ✓ Pushed ", Color::Green),
+        PushStatus::Failed(_) => (" ✗ Push Failed ", Color::Red),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    // Content based on status
+    let content: Vec<Line> = match status {
+        PushStatus::SelectRemote => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("  Set upstream for '{}':", branch),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+            ];
+            for (i, remote) in remotes.iter().enumerate() {
+                let style = if i == selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(format!("    {}", remote), style)));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  j/k:select Enter:push ESC:cancel",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        PushStatus::Pushing => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Pushing changes...",
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        PushStatus::Success => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  ✓ Changes pushed successfully!",
+                    Style::default().fg(Color::Green),
+                )),
+            ]
+        }
+        PushStatus::Failed(msg) => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  ✗ {}", msg),
+                    Style::default().fg(Color::Red),
+                )),
+            ]
+        }
+    };
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, modal_area);
 }
 
 /// Draw header with repo:branch info

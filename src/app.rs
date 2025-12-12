@@ -337,12 +337,60 @@ impl App {
         self.refresh_files()
     }
 
-    /// Push to remote
+    /// Push to remote - shows remote selector if no upstream configured
     pub fn push(&mut self) -> Result<()> {
-        self.set_status("Pushing...".to_string());
-        self.repo.push()?;
-        self.set_status("Push complete".to_string());
-        Ok(())
+        // Check if upstream is configured
+        if self.repo.has_upstream() {
+            // Normal push
+            self.set_status("Pushing...".to_string());
+            self.repo.push()?;
+            self.set_status("Push complete".to_string());
+            Ok(())
+        } else {
+            // No upstream - show remote selector
+            let remotes = self.repo.get_remotes();
+            if remotes.is_empty() {
+                return Err(crate::error::FussrError::Git(
+                    git2::Error::from_str("No remotes configured. Add with: git remote add origin <url>")
+                ));
+            }
+            self.input_mode = InputMode::Push {
+                remotes,
+                selected: 0,
+                status: crate::types::PushStatus::SelectRemote,
+            };
+            Ok(())
+        }
+    }
+
+    /// Execute push with selected remote
+    pub fn push_to_remote(&mut self, remote: &str) -> Result<()> {
+        // Update status to pushing
+        if let InputMode::Push { status, .. } = &mut self.input_mode {
+            *status = crate::types::PushStatus::Pushing;
+        }
+
+        match self.repo.push_with_upstream(remote) {
+            Ok(()) => {
+                if let InputMode::Push { status, .. } = &mut self.input_mode {
+                    *status = crate::types::PushStatus::Success;
+                }
+                self.set_status(format!("Pushed to {}/{}", remote, self.branch_name));
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if let InputMode::Push { status, .. } = &mut self.input_mode {
+                    *status = crate::types::PushStatus::Failed(msg);
+                }
+                Ok(()) // Don't propagate - show in modal
+            }
+        }
+    }
+
+    /// Close push modal
+    pub fn close_push(&mut self) {
+        self.input_mode = InputMode::Navigation;
     }
 
     /// Create a commit

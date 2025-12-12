@@ -331,7 +331,15 @@ impl GitRepo {
         if output.status.success() {
             Ok(())
         } else {
-            Err(FussrError::Git(git2::Error::from_str("Failed to fetch")))
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("Could not read from remote") {
+                "Cannot reach remote - check connection/auth".to_string()
+            } else if stderr.contains("does not appear to be a git repository") {
+                "Remote not found. Add with: git remote add origin <url>".to_string()
+            } else {
+                "Fetch failed".to_string()
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
         }
     }
 
@@ -346,7 +354,19 @@ impl GitRepo {
         if output.status.success() {
             Ok(())
         } else {
-            Err(FussrError::Git(git2::Error::from_str("Failed to pull")))
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("no tracking information") || stderr.contains("no upstream") {
+                format!("No upstream set. Run: git branch --set-upstream-to=origin/{}", self.branch_name())
+            } else if stderr.contains("Could not read from remote") {
+                "Cannot reach remote - check connection/auth".to_string()
+            } else if stderr.contains("CONFLICT") || stderr.contains("Merge conflict") {
+                "Pull has conflicts - resolve manually".to_string()
+            } else if stderr.contains("not a git repository") {
+                "Not in a git repository".to_string()
+            } else {
+                "Pull failed".to_string()
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
         }
     }
 
@@ -361,7 +381,77 @@ impl GitRepo {
         if output.status.success() {
             Ok(())
         } else {
-            Err(FussrError::Git(git2::Error::from_str("Failed to push")))
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            // Detect common push errors and provide helpful messages
+            let msg = if stderr.contains("no upstream branch") || stderr.contains("has no upstream") {
+                format!("No upstream set. Run: git push -u origin {}", self.branch_name())
+            } else if stderr.contains("does not appear to be a git repository") {
+                "Remote not found. Check your remote config".to_string()
+            } else if stderr.contains("rejected") {
+                "Push rejected - pull first or force push".to_string()
+            } else if stderr.contains("Could not read from remote") {
+                "Cannot reach remote - check connection/auth".to_string()
+            } else {
+                "Push failed".to_string()
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
+        }
+    }
+
+    /// Check if current branch has an upstream configured
+    pub fn has_upstream(&self) -> bool {
+        let output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "@{upstream}"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        output.map(|o| o.status.success()).unwrap_or(false)
+    }
+
+    /// Get list of remote names
+    pub fn get_remotes(&self) -> Vec<String> {
+        let output = Command::new("git")
+            .args(["remote"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Push with upstream set (git push -u <remote> <branch>)
+    pub fn push_with_upstream(&self, remote: &str) -> Result<()> {
+        let branch = self.branch_name();
+        let output = Command::new("git")
+            .args(["push", "-u", remote, &branch])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("Could not read from remote") {
+                format!("Cannot reach '{}' - check connection/auth", remote)
+            } else if stderr.contains("does not appear to be a git repository") {
+                format!("Remote '{}' not found", remote)
+            } else if stderr.contains("rejected") {
+                "Push rejected - pull first".to_string()
+            } else {
+                format!("Push to '{}' failed", remote)
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
         }
     }
 
