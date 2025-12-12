@@ -1,0 +1,29 @@
+[package]
+name = "fussr"
+version = "0.1.0"
+edition = "2021"
+description = "A git staging TUI tool - Rust port of fuss"
+authors = ["Matthew Wolffe"]
+license = "MIT"
+
+[dependencies]
+# CLI argument parsing
+clap = { version = "4.5", features = ["derive"] }
+
+# TUI framework
+ratatui = "0.29"
+crossterm = "0.28"
+
+# Git operations
+git2 = "0.20"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+
+# Unicode handling
+unicode-width = "0.2"
+
+[profile.release]
+lto = true
+strip = true
