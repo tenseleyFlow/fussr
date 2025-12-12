@@ -79,8 +79,8 @@ fn run_event_loop(
         // Handle events
         if event::poll(std::time::Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                // Handle Ctrl+C to quit from any mode
-                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c')
+                // Handle Ctrl+Q to quit from any mode
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q')
                 {
                     app.should_quit = true;
                 }
@@ -89,6 +89,7 @@ fn run_event_loop(
                 match &app.input_mode {
                     InputMode::Navigation => handle_navigation_key(app, key.code, key.modifiers)?,
                     InputMode::Rename { .. } => handle_rename_key(app, key.code)?,
+                    InputMode::Commit { .. } => handle_commit_key(app, key.code)?,
                     InputMode::Search { .. } => handle_search_key(app, key.code)?,
                     InputMode::Confirm { .. } => handle_confirm_key(app, key.code)?,
                 }
@@ -160,8 +161,12 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
         KeyCode::Char('p') if app.mode == AppMode::Git => {
             app.push()?;
         }
-
-        // TODO: Add more git commands (commit, diff, etc.)
+        KeyCode::Char('m') if app.mode == AppMode::Git => {
+            app.enter_commit_mode(false);
+        }
+        KeyCode::Char('M') if app.mode == AppMode::Git => {
+            app.enter_commit_mode(true); // amend
+        }
 
         _ => {}
     }
@@ -198,6 +203,44 @@ fn handle_rename_key(app: &mut App, code: KeyCode) -> Result<()> {
         }
         KeyCode::Char(c) => {
             if let InputMode::Rename { buffer, cursor } = &mut app.input_mode {
+                buffer.insert(*cursor, c);
+                *cursor += 1;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Handle keys in commit mode
+fn handle_commit_key(app: &mut App, code: KeyCode) -> Result<()> {
+    match code {
+        KeyCode::Esc => app.cancel_commit(),
+        KeyCode::Enter => app.apply_commit()?,
+        KeyCode::Backspace => {
+            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
+                if *cursor > 0 {
+                    buffer.remove(*cursor - 1);
+                    *cursor -= 1;
+                }
+            }
+        }
+        KeyCode::Left => {
+            if let InputMode::Commit { cursor, .. } = &mut app.input_mode {
+                if *cursor > 0 {
+                    *cursor -= 1;
+                }
+            }
+        }
+        KeyCode::Right => {
+            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
+                if *cursor < buffer.len() {
+                    *cursor += 1;
+                }
+            }
+        }
+        KeyCode::Char(c) => {
+            if let InputMode::Commit { buffer, cursor, .. } = &mut app.input_mode {
                 buffer.insert(*cursor, c);
                 *cursor += 1;
             }

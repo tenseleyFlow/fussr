@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Paragraph},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 
@@ -22,6 +22,50 @@ pub fn draw(frame: &mut Frame, app: &App) {
     draw_header(frame, app, chunks[0]);
     draw_tree(frame, app, chunks[1]);
     draw_help(frame, app, chunks[2]);
+
+    // Draw modal overlay if in commit mode
+    if let InputMode::Commit { buffer, cursor, amend } = &app.input_mode {
+        draw_commit_modal(frame, buffer, *cursor, *amend);
+    }
+}
+
+/// Draw commit message modal
+fn draw_commit_modal(frame: &mut Frame, buffer: &str, cursor: usize, amend: bool) {
+    let area = frame.area();
+
+    // Center the modal
+    let modal_width = 60.min(area.width.saturating_sub(4));
+    let modal_height = 5;
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    // Clear area behind modal
+    frame.render_widget(Clear, modal_area);
+
+    // Title based on amend
+    let title = if amend { " Amend Commit " } else { " Commit " };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green));
+
+    // Build input line with cursor
+    let display_text = if cursor >= buffer.len() {
+        format!("{}█", buffer)
+    } else {
+        format!("{}█{}", &buffer[..cursor], &buffer[cursor..])
+    };
+
+    let input = Paragraph::new(vec![
+        Line::from(""),
+        Line::from(Span::raw(display_text)),
+    ])
+    .block(block);
+
+    frame.render_widget(input, modal_area);
 }
 
 /// Draw header with repo:branch info
@@ -167,63 +211,60 @@ fn render_tree_item(item: &SelectableItem, is_selected: bool, input_mode: &Input
 
 /// Draw help/status bar
 fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
-    let help_text = match &app.input_mode {
-        InputMode::Rename { .. } => {
+    let (line1, line2) = match &app.input_mode {
+        InputMode::Rename { .. } => (
             Line::from(vec![
                 Span::styled(
                     "RENAME: ",
                     Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
                 ),
-                Span::raw("Type new name | "),
-                Span::styled("Tab", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(": save | "),
-                Span::styled("ESC", Style::default().add_modifier(Modifier::BOLD)),
-                Span::raw(": cancel"),
-            ])
-        }
-        InputMode::Search { buffer } => {
+                Span::raw("Type new name | Tab:save | ESC:cancel"),
+            ]),
+            Line::from(""),
+        ),
+        InputMode::Commit { .. } => (
             Line::from(vec![
                 Span::styled(
-                    "SEARCH: ",
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                    "COMMIT: ",
+                    Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
                 ),
+                Span::raw("Type message | Enter:commit | ESC:cancel"),
+            ]),
+            Line::from(""),
+        ),
+        InputMode::Search { buffer } => (
+            Line::from(vec![
+                Span::styled("SEARCH: ", Style::default().fg(Color::Cyan)),
                 Span::raw(buffer.clone()),
-            ])
-        }
+            ]),
+            Line::from(""),
+        ),
         _ => {
-            if app.mode == AppMode::Git {
+            let legend = Line::from(vec![
+                Span::styled("↑", Style::default().fg(Color::Green)),
+                Span::raw("=staged "),
+                Span::styled("✗", Style::default().fg(Color::Red)),
+                Span::raw("=mod "),
+                Span::styled("✗", Style::default().fg(Color::DarkGray)),
+                Span::raw("=new "),
+                Span::styled("↓", Style::default().fg(Color::Blue)),
+                Span::raw("=incoming"),
+            ]);
+
+            let keys = if app.mode == AppMode::Git {
                 Line::from(vec![
-                    Span::styled("GIT MODE: ", Style::default().fg(Color::Yellow)),
-                    Span::raw("a:stage u:unstage S:stage-all U:unstage-all x:discard m:commit "),
-                    Span::raw("f:fetch l:pull p:push d:diff q:exit-mode ESC:exit ctrl-c:quit"),
+                    Span::styled("GIT: ", Style::default().fg(Color::Yellow)),
+                    Span::raw("a/u:stage S/U:all x:discard m:commit f:fetch l:pull p:push q/ESC:exit ^Q:quit"),
                 ])
             } else {
-                Line::from(vec![
-                    Span::styled("↑", Style::default().fg(Color::Green)),
-                    Span::raw("=staged "),
-                    Span::styled("✗", Style::default().fg(Color::Red)),
-                    Span::raw("=modified "),
-                    Span::styled("✗", Style::default().fg(Color::DarkGray)),
-                    Span::raw("=untracked "),
-                    Span::styled("↓", Style::default().fg(Color::Blue)),
-                    Span::raw("=incoming | j/k:nav ←/→:tree space:toggle .:dotfiles alt-g:git ctrl-c:quit"),
-                ])
-            }
+                Line::from("j/k:nav ←/→:tree space:toggle .:dots alt-g:git ^Q:quit")
+            };
+
+            (legend, keys)
         }
     };
 
-    let legend = Line::from(vec![
-        Span::styled("↑", Style::default().fg(Color::Green)),
-        Span::raw("=staged "),
-        Span::styled("✗", Style::default().fg(Color::Red)),
-        Span::raw("=modified "),
-        Span::styled("✗", Style::default().fg(Color::DarkGray)),
-        Span::raw("=untracked "),
-        Span::styled("↓", Style::default().fg(Color::Blue)),
-        Span::raw("=incoming"),
-    ]);
-
-    let help = Paragraph::new(vec![legend, help_text]);
+    let help = Paragraph::new(vec![line1, line2]);
     frame.render_widget(help, area);
 }
 

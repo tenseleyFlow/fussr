@@ -399,6 +399,45 @@ impl App {
         self.input_mode = InputMode::Navigation;
     }
 
+    /// Enter commit mode
+    pub fn enter_commit_mode(&mut self, amend: bool) {
+        let initial_buffer = if amend {
+            self.repo.last_commit_message().unwrap_or_default()
+        } else {
+            String::new()
+        };
+        let cursor = initial_buffer.len();
+        self.input_mode = InputMode::Commit {
+            buffer: initial_buffer,
+            cursor,
+            amend,
+        };
+    }
+
+    /// Apply commit
+    pub fn apply_commit(&mut self) -> Result<()> {
+        if let InputMode::Commit { buffer, amend, .. } = &self.input_mode {
+            let message = buffer.trim();
+            if !message.is_empty() {
+                if *amend {
+                    self.repo.commit_amend(message)?;
+                    self.set_status("Commit amended".to_string());
+                } else {
+                    self.repo.commit(message)?;
+                    self.set_status("Committed".to_string());
+                }
+                self.refresh_files()?;
+            }
+        }
+        self.input_mode = InputMode::Navigation;
+        Ok(())
+    }
+
+    /// Cancel commit mode
+    pub fn cancel_commit(&mut self) {
+        self.input_mode = InputMode::Navigation;
+    }
+
     /// Fuzzy search and jump to match
     pub fn fuzzy_jump(&mut self, pattern: &str) {
         if pattern.is_empty() {

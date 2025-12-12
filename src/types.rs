@@ -177,6 +177,7 @@ pub enum InputMode {
     Navigation,
     Rename { buffer: String, cursor: usize },
     Search { buffer: String },
+    Commit { buffer: String, cursor: usize, amend: bool },
     Confirm { message: String, action: ConfirmAction },
 }
 
