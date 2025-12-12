@@ -32,6 +32,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     if let InputMode::Push { remotes, selected, status } = &app.input_mode {
         draw_push_modal(frame, remotes, *selected, status, &app.branch_name);
     }
+
+    // Draw modal overlay if in confirm mode
+    if let InputMode::Confirm { message, .. } = &app.input_mode {
+        draw_confirm_modal(frame, message);
+    }
 }
 
 /// Draw commit message modal
@@ -196,6 +201,44 @@ fn draw_push_modal(frame: &mut Frame, remotes: &[String], selected: usize, statu
             ]
         }
     };
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, modal_area);
+}
+
+/// Draw confirmation modal
+fn draw_confirm_modal(frame: &mut Frame, message: &str) {
+    let area = frame.area();
+
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let modal_height = 5;
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    // Clear area behind modal
+    frame.render_widget(Clear, modal_area);
+
+    let block = Block::default()
+        .title(" Confirm ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow));
+
+    let content = vec![
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {}", message),
+            Style::default().fg(Color::White),
+        )),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw("es / "),
+            Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+            Span::raw("o"),
+        ]),
+    ];
 
     let widget = Paragraph::new(content).block(block);
     frame.render_widget(widget, modal_area);

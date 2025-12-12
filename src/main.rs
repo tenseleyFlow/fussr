@@ -192,7 +192,7 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
             app.unstage_all()?;
         }
         KeyCode::Char('x') | KeyCode::Char('X') if app.mode == AppMode::Git => {
-            app.discard_selected()?;
+            app.confirm_discard();
         }
         KeyCode::Char('r') if app.mode == AppMode::Git => {
             app.delete_selected()?;
@@ -410,9 +410,12 @@ fn handle_search_key(app: &mut App, code: KeyCode) -> Result<()> {
 fn handle_confirm_key(app: &mut App, code: KeyCode) -> Result<()> {
     match code {
         KeyCode::Char('y') | KeyCode::Char('Y') => {
-            // Execute the confirmed action
-            // TODO: Implement confirmation actions
-            app.input_mode = InputMode::Navigation;
+            // Extract action and execute
+            if let InputMode::Confirm { action, .. } = &app.input_mode {
+                let action = action.clone();
+                app.input_mode = InputMode::Navigation;
+                app.execute_confirm_action(&action)?;
+            }
         }
         KeyCode::Esc | KeyCode::Char('n') | KeyCode::Char('N') => {
             app.input_mode = InputMode::Navigation;

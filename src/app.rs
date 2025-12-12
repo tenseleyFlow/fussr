@@ -297,6 +297,23 @@ impl App {
         self.refresh_files()
     }
 
+    /// Show confirmation dialog for discard
+    pub fn confirm_discard(&mut self) {
+        if let Some(item) = self.selected_item().cloned() {
+            if item.is_file && item.status.is_dirty() {
+                let path = item.path.clone();
+                let filename = path.file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                self.input_mode = InputMode::Confirm {
+                    message: format!("Discard changes to '{}'?", filename),
+                    action: crate::types::ConfirmAction::Discard(path),
+                };
+            }
+        }
+    }
+
     /// Discard changes to selected file
     pub fn discard_selected(&mut self) -> Result<()> {
         if let Some(item) = self.selected_item().cloned() {
@@ -304,6 +321,38 @@ impl App {
                 self.repo.discard_changes(&item.path, item.status.is_untracked)?;
                 self.set_status(format!("Discarded changes: {}", item.path.display()));
                 self.refresh_files()?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Execute a confirmed action
+    pub fn execute_confirm_action(&mut self, action: &crate::types::ConfirmAction) -> Result<()> {
+        match action {
+            crate::types::ConfirmAction::Discard(path) => {
+                // Find status for this path
+                let is_untracked = self.items.iter()
+                    .find(|i| &i.path == path)
+                    .map(|i| i.status.is_untracked)
+                    .unwrap_or(false);
+                self.repo.discard_changes(path, is_untracked)?;
+                self.set_status(format!("Discarded: {}", path.display()));
+                self.refresh_files()?;
+            }
+            crate::types::ConfirmAction::Delete(path) => {
+                let is_untracked = self.items.iter()
+                    .find(|i| &i.path == path)
+                    .map(|i| i.status.is_untracked)
+                    .unwrap_or(false);
+                self.repo.delete_file(path, is_untracked)?;
+                self.set_status(format!("Deleted: {}", path.display()));
+                self.refresh_files()?;
+            }
+            crate::types::ConfirmAction::StageAll => {
+                self.stage_all()?;
+            }
+            crate::types::ConfirmAction::UnstageAll => {
+                self.unstage_all()?;
             }
         }
         Ok(())
