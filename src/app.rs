@@ -370,12 +370,68 @@ impl App {
         Ok(())
     }
 
-    /// Fetch from remote
+    /// Fetch from remote - shows remote selector if multiple remotes
     pub fn fetch(&mut self) -> Result<()> {
-        self.set_status("Fetching...".to_string());
-        self.repo.fetch()?;
-        self.set_status("Fetch complete".to_string());
-        self.refresh_files()
+        let remotes = self.repo.get_remotes();
+        if remotes.len() <= 1 {
+            // Single or no remote - just fetch
+            self.set_status("Fetching...".to_string());
+            self.repo.fetch()?;
+            self.set_status("Fetch complete".to_string());
+            self.refresh_files()
+        } else {
+            // Multiple remotes - show selector
+            self.input_mode = InputMode::Fetch {
+                remotes,
+                selected: 0,
+                status: crate::types::FetchStatus::SelectRemote,
+            };
+            Ok(())
+        }
+    }
+
+    /// Execute fetch from selected remote
+    pub fn fetch_from_remote(&mut self, remote: &str) -> Result<()> {
+        if let InputMode::Fetch { status, .. } = &mut self.input_mode {
+            *status = crate::types::FetchStatus::Fetching;
+        }
+
+        match self.repo.fetch_from_remote(remote) {
+            Ok(()) => {
+                if let InputMode::Fetch { status, .. } = &mut self.input_mode {
+                    *status = crate::types::FetchStatus::Success;
+                }
+                self.set_status(format!("Fetched from {}", remote));
+                self.refresh_files()?;
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if let InputMode::Fetch { status, .. } = &mut self.input_mode {
+                    *status = crate::types::FetchStatus::Failed(msg);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Close fetch modal
+    pub fn close_fetch(&mut self) {
+        self.input_mode = InputMode::Navigation;
+    }
+
+    /// Force show fetch modal (for testing)
+    pub fn show_fetch_modal(&mut self) {
+        let remotes = self.repo.get_remotes();
+        if remotes.is_empty() {
+            self.set_status("No remotes configured".to_string());
+            return;
+        }
+        self.input_mode = InputMode::Fetch {
+            remotes,
+            selected: 0,
+            status: crate::types::FetchStatus::SelectRemote,
+        };
     }
 
     /// Pull from remote - shows remote selector if no upstream configured

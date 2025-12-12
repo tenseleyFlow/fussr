@@ -93,6 +93,7 @@ fn run_event_loop(
                     InputMode::Search { .. } => handle_search_key(app, key.code)?,
                     InputMode::Push { .. } => handle_push_key(app, key.code)?,
                     InputMode::Pull { .. } => handle_pull_key(app, key.code)?,
+                    InputMode::Fetch { .. } => handle_fetch_key(app, key.code)?,
                     InputMode::Confirm { .. } => handle_confirm_key(app, key.code)?,
                 }
 
@@ -203,6 +204,10 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
                 Ok(()) => {}
                 Err(e) => app.set_status(format!("Fetch failed: {}", e)),
             }
+        }
+        KeyCode::Char('F') if app.mode == AppMode::Git => {
+            // Debug: Force show fetch modal regardless of remote count
+            app.show_fetch_modal();
         }
         KeyCode::Char('l') if app.mode == AppMode::Git => {
             match app.pull() {
@@ -438,6 +443,60 @@ fn handle_pull_key(app: &mut App, code: KeyCode) -> Result<()> {
         PullStatus::Success | PullStatus::Failed(_) => {
             // Any key closes the modal
             app.close_pull();
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle keys in fetch mode
+fn handle_fetch_key(app: &mut App, code: KeyCode) -> Result<()> {
+    use crate::types::FetchStatus;
+
+    let status = if let InputMode::Fetch { status, .. } = &app.input_mode {
+        status.clone()
+    } else {
+        return Ok(());
+    };
+
+    match status {
+        FetchStatus::SelectRemote => {
+            match code {
+                KeyCode::Esc => app.close_fetch(),
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let InputMode::Fetch { remotes, selected, .. } = &mut app.input_mode {
+                        if *selected + 1 < remotes.len() {
+                            *selected += 1;
+                        }
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let InputMode::Fetch { selected, .. } = &mut app.input_mode {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    let remote = if let InputMode::Fetch { remotes, selected, .. } = &app.input_mode {
+                        remotes.get(*selected).cloned()
+                    } else {
+                        None
+                    };
+
+                    if let Some(remote) = remote {
+                        app.fetch_from_remote(&remote)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        FetchStatus::Fetching => {
+            // Don't respond to keys while fetching
+        }
+        FetchStatus::Success | FetchStatus::Failed(_) => {
+            // Any key closes the modal
+            app.close_fetch();
         }
     }
 

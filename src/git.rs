@@ -343,6 +343,29 @@ impl GitRepo {
         }
     }
 
+    /// Fetch from a specific remote
+    pub fn fetch_from_remote(&self, remote: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(["fetch", remote])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("Could not read from remote") {
+                format!("Cannot reach '{}' - check connection/auth", remote)
+            } else if stderr.contains("does not appear to be a git repository") {
+                format!("Remote '{}' not found", remote)
+            } else {
+                format!("Fetch from '{}' failed", remote)
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
+        }
+    }
+
     /// Pull from remote (captures output to not corrupt TUI)
     pub fn pull(&self) -> Result<()> {
         let output = Command::new("git")

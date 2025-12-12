@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::{AppMode, CommitStatus, InputMode, PullStatus, PushStatus, SelectableItem};
+use crate::types::{AppMode, CommitStatus, FetchStatus, InputMode, PullStatus, PushStatus, SelectableItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -36,6 +36,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Draw modal overlay if in pull mode
     if let InputMode::Pull { remotes, selected, status } = &app.input_mode {
         draw_pull_modal(frame, remotes, *selected, status, &app.branch_name);
+    }
+
+    // Draw modal overlay if in fetch mode
+    if let InputMode::Fetch { remotes, selected, status } = &app.input_mode {
+        draw_fetch_modal(frame, remotes, *selected, status);
     }
 
     // Draw modal overlay if in confirm mode
@@ -282,6 +287,91 @@ fn draw_pull_modal(frame: &mut Frame, remotes: &[String], selected: usize, statu
             ]
         }
         PullStatus::Failed(msg) => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  ✗ {}", msg),
+                    Style::default().fg(Color::Red),
+                )),
+            ]
+        }
+    };
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, modal_area);
+}
+
+/// Draw fetch remote selection modal
+fn draw_fetch_modal(frame: &mut Frame, remotes: &[String], selected: usize, status: &FetchStatus) {
+    let area = frame.area();
+
+    let modal_height = match status {
+        FetchStatus::SelectRemote => (remotes.len() + 4).min(12) as u16,
+        _ => 5,
+    };
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    frame.render_widget(Clear, modal_area);
+
+    let (title, border_color) = match status {
+        FetchStatus::SelectRemote => (" Fetch - Select Remote ", Color::Cyan),
+        FetchStatus::Fetching => (" Fetching... ", Color::Yellow),
+        FetchStatus::Success => (" ✓ Fetched ", Color::Green),
+        FetchStatus::Failed(_) => (" ✗ Fetch Failed ", Color::Red),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let content: Vec<Line> = match status {
+        FetchStatus::SelectRemote => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    "  Select remote to fetch from:",
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+            ];
+            for (i, remote) in remotes.iter().enumerate() {
+                let style = if i == selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(format!("    {}", remote), style)));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  j/k:select Enter:fetch ESC:cancel",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        FetchStatus::Fetching => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Fetching from remote...",
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        FetchStatus::Success => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  ✓ Fetch complete!",
+                    Style::default().fg(Color::Green),
+                )),
+            ]
+        }
+        FetchStatus::Failed(msg) => {
             vec![
                 Line::from(""),
                 Line::from(Span::styled(
