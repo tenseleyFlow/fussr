@@ -455,6 +455,41 @@ impl GitRepo {
         }
     }
 
+    /// Pull from a specific remote/branch (and set upstream)
+    pub fn pull_from_remote(&self, remote: &str) -> Result<()> {
+        let branch = self.branch_name();
+
+        // First set upstream tracking
+        let _ = Command::new("git")
+            .args(["branch", "--set-upstream-to", &format!("{}/{}", remote, branch)])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        // Then pull
+        let output = Command::new("git")
+            .args(["pull", remote, &branch])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("Could not read from remote") {
+                format!("Cannot reach '{}' - check connection/auth", remote)
+            } else if stderr.contains("CONFLICT") || stderr.contains("Merge conflict") {
+                "Pull has conflicts - resolve manually".to_string()
+            } else if stderr.contains("does not appear to be a git repository") {
+                format!("Remote '{}' not found", remote)
+            } else {
+                format!("Pull from '{}' failed", remote)
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
+        }
+    }
+
     /// Get diff for a file
     pub fn diff_file(&self, path: &Path, has_incoming: bool) -> Result<String> {
         let path_str = path.to_string_lossy();

@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::{AppMode, CommitStatus, InputMode, PushStatus, SelectableItem};
+use crate::types::{AppMode, CommitStatus, InputMode, PullStatus, PushStatus, SelectableItem};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -31,6 +31,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Draw modal overlay if in push mode
     if let InputMode::Push { remotes, selected, status } = &app.input_mode {
         draw_push_modal(frame, remotes, *selected, status, &app.branch_name);
+    }
+
+    // Draw modal overlay if in pull mode
+    if let InputMode::Pull { remotes, selected, status } = &app.input_mode {
+        draw_pull_modal(frame, remotes, *selected, status, &app.branch_name);
     }
 
     // Draw modal overlay if in confirm mode
@@ -192,6 +197,91 @@ fn draw_push_modal(frame: &mut Frame, remotes: &[String], selected: usize, statu
             ]
         }
         PushStatus::Failed(msg) => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  ✗ {}", msg),
+                    Style::default().fg(Color::Red),
+                )),
+            ]
+        }
+    };
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, modal_area);
+}
+
+/// Draw pull remote selection modal
+fn draw_pull_modal(frame: &mut Frame, remotes: &[String], selected: usize, status: &PullStatus, branch: &str) {
+    let area = frame.area();
+
+    let modal_height = match status {
+        PullStatus::SelectRemote => (remotes.len() + 4).min(12) as u16,
+        _ => 5,
+    };
+    let modal_width = 50.min(area.width.saturating_sub(4));
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    frame.render_widget(Clear, modal_area);
+
+    let (title, border_color) = match status {
+        PullStatus::SelectRemote => (" Pull - Select Remote ", Color::Cyan),
+        PullStatus::Pulling => (" Pulling... ", Color::Yellow),
+        PullStatus::Success => (" ✓ Pulled ", Color::Green),
+        PullStatus::Failed(_) => (" ✗ Pull Failed ", Color::Red),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let content: Vec<Line> = match status {
+        PullStatus::SelectRemote => {
+            let mut lines = vec![
+                Line::from(Span::styled(
+                    format!("  Set upstream for '{}':", branch),
+                    Style::default().fg(Color::White),
+                )),
+                Line::from(""),
+            ];
+            for (i, remote) in remotes.iter().enumerate() {
+                let style = if i == selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                lines.push(Line::from(Span::styled(format!("    {}", remote), style)));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  j/k:select Enter:pull ESC:cancel",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        PullStatus::Pulling => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  Pulling changes...",
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        PullStatus::Success => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    "  ✓ Changes pulled successfully!",
+                    Style::default().fg(Color::Green),
+                )),
+            ]
+        }
+        PullStatus::Failed(msg) => {
             vec![
                 Line::from(""),
                 Line::from(Span::styled(

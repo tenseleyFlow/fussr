@@ -92,6 +92,7 @@ fn run_event_loop(
                     InputMode::Commit { .. } => handle_commit_key(app, key.code)?,
                     InputMode::Search { .. } => handle_search_key(app, key.code)?,
                     InputMode::Push { .. } => handle_push_key(app, key.code)?,
+                    InputMode::Pull { .. } => handle_pull_key(app, key.code)?,
                     InputMode::Confirm { .. } => handle_confirm_key(app, key.code)?,
                 }
 
@@ -208,6 +209,10 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
                 Ok(()) => {}
                 Err(e) => app.set_status(format!("Pull failed: {}", e)),
             }
+        }
+        KeyCode::Char('L') if app.mode == AppMode::Git => {
+            // Debug: Force show pull modal regardless of upstream status
+            app.show_pull_modal();
         }
         KeyCode::Char('p') if app.mode == AppMode::Git => {
             match app.push() {
@@ -379,6 +384,60 @@ fn handle_push_key(app: &mut App, code: KeyCode) -> Result<()> {
         PushStatus::Success | PushStatus::Failed(_) => {
             // Any key closes the modal
             app.close_push();
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle keys in pull mode
+fn handle_pull_key(app: &mut App, code: KeyCode) -> Result<()> {
+    use crate::types::PullStatus;
+
+    let status = if let InputMode::Pull { status, .. } = &app.input_mode {
+        status.clone()
+    } else {
+        return Ok(());
+    };
+
+    match status {
+        PullStatus::SelectRemote => {
+            match code {
+                KeyCode::Esc => app.close_pull(),
+                KeyCode::Char('j') | KeyCode::Down => {
+                    if let InputMode::Pull { remotes, selected, .. } = &mut app.input_mode {
+                        if *selected + 1 < remotes.len() {
+                            *selected += 1;
+                        }
+                    }
+                }
+                KeyCode::Char('k') | KeyCode::Up => {
+                    if let InputMode::Pull { selected, .. } = &mut app.input_mode {
+                        if *selected > 0 {
+                            *selected -= 1;
+                        }
+                    }
+                }
+                KeyCode::Enter => {
+                    let remote = if let InputMode::Pull { remotes, selected, .. } = &app.input_mode {
+                        remotes.get(*selected).cloned()
+                    } else {
+                        None
+                    };
+
+                    if let Some(remote) = remote {
+                        app.pull_from_remote(&remote)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        PullStatus::Pulling => {
+            // Don't respond to keys while pulling
+        }
+        PullStatus::Success | PullStatus::Failed(_) => {
+            // Any key closes the modal
+            app.close_pull();
         }
     }
 

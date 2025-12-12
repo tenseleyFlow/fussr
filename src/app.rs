@@ -378,12 +378,71 @@ impl App {
         self.refresh_files()
     }
 
-    /// Pull from remote
+    /// Pull from remote - shows remote selector if no upstream configured
     pub fn pull(&mut self) -> Result<()> {
-        self.set_status("Pulling...".to_string());
-        self.repo.pull()?;
-        self.set_status("Pull complete".to_string());
-        self.refresh_files()
+        if self.repo.has_upstream() {
+            self.set_status("Pulling...".to_string());
+            self.repo.pull()?;
+            self.set_status("Pull complete".to_string());
+            self.refresh_files()
+        } else {
+            let remotes = self.repo.get_remotes();
+            if remotes.is_empty() {
+                return Err(crate::error::FussrError::Git(
+                    git2::Error::from_str("No remotes configured. Add with: git remote add origin <url>")
+                ));
+            }
+            self.input_mode = InputMode::Pull {
+                remotes,
+                selected: 0,
+                status: crate::types::PullStatus::SelectRemote,
+            };
+            Ok(())
+        }
+    }
+
+    /// Execute pull with selected remote
+    pub fn pull_from_remote(&mut self, remote: &str) -> Result<()> {
+        if let InputMode::Pull { status, .. } = &mut self.input_mode {
+            *status = crate::types::PullStatus::Pulling;
+        }
+
+        match self.repo.pull_from_remote(remote) {
+            Ok(()) => {
+                if let InputMode::Pull { status, .. } = &mut self.input_mode {
+                    *status = crate::types::PullStatus::Success;
+                }
+                self.set_status(format!("Pulled from {}/{}", remote, self.branch_name));
+                self.refresh_files()?;
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if let InputMode::Pull { status, .. } = &mut self.input_mode {
+                    *status = crate::types::PullStatus::Failed(msg);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Close pull modal
+    pub fn close_pull(&mut self) {
+        self.input_mode = InputMode::Navigation;
+    }
+
+    /// Force show pull modal (for testing)
+    pub fn show_pull_modal(&mut self) {
+        let remotes = self.repo.get_remotes();
+        if remotes.is_empty() {
+            self.set_status("No remotes configured".to_string());
+            return;
+        }
+        self.input_mode = InputMode::Pull {
+            remotes,
+            selected: 0,
+            status: crate::types::PullStatus::SelectRemote,
+        };
     }
 
     /// Push to remote - shows remote selector if no upstream configured

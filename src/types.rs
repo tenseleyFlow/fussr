@@ -189,6 +189,15 @@ pub enum PushStatus {
     Failed(String),
 }
 
+/// Status of pull operation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PullStatus {
+    SelectRemote,
+    Pulling,
+    Success,
+    Failed(String),
+}
+
 /// Input mode for special states
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputMode {
@@ -197,6 +206,7 @@ pub enum InputMode {
     Search { buffer: String },
     Commit { buffer: String, cursor: usize, amend: bool, status: CommitStatus },
     Push { remotes: Vec<String>, selected: usize, status: PushStatus },
+    Pull { remotes: Vec<String>, selected: usize, status: PullStatus },
     Confirm { message: String, action: ConfirmAction },
 }
 
