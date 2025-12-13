@@ -803,7 +803,7 @@ fn draw_help(frame: &mut Frame, app: &App, area: Rect) {
             let keys = if app.mode == AppMode::Git {
                 Line::from(vec![
                     Span::styled("GIT: ", Style::default().fg(Color::Yellow)),
-                    Span::raw("a/u:stage S/U:all x:discard m:commit f:fetch l:pull p:push q/ESC:exit ^Q:quit"),
+                    Span::raw("a/u:stage S/U:all x:discard m:commit t:tag f:fetch l:pull p:push q/ESC:exit ^Q:quit"),
                 ])
             } else {
                 Line::from("j/k:nav ←/→:tree space:toggle .:dots alt-g:git ^Q:quit")
