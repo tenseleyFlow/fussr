@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::types::{AppMode, CommitStatus, FetchStatus, InputMode, PullStatus, PushStatus, SelectableItem};
+use crate::types::{AppMode, CommitStatus, FetchStatus, InputMode, PullStatus, PushStatus, SelectableItem, TagStep};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -41,6 +41,11 @@ pub fn draw(frame: &mut Frame, app: &App) {
     // Draw modal overlay if in fetch mode
     if let InputMode::Fetch { remotes, selected, status } = &app.input_mode {
         draw_fetch_modal(frame, remotes, *selected, status);
+    }
+
+    // Draw modal overlay if in tag mode
+    if let InputMode::Tag { name, message, cursor, existing_tags, step } = &app.input_mode {
+        draw_tag_modal(frame, name, message, *cursor, existing_tags, step);
     }
 
     // Draw modal overlay if in confirm mode
@@ -372,6 +377,184 @@ fn draw_fetch_modal(frame: &mut Frame, remotes: &[String], selected: usize, stat
             ]
         }
         FetchStatus::Failed(msg) => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  ✗ {}", msg),
+                    Style::default().fg(Color::Red),
+                )),
+            ]
+        }
+    };
+
+    let widget = Paragraph::new(content).block(block);
+    frame.render_widget(widget, modal_area);
+}
+
+/// Draw tag creation modal
+fn draw_tag_modal(
+    frame: &mut Frame,
+    name: &str,
+    message: &str,
+    cursor: usize,
+    existing_tags: &[String],
+    step: &TagStep,
+) {
+    let area = frame.area();
+
+    // Modal size based on step
+    let modal_height = match step {
+        TagStep::EnterName | TagStep::EnterMessage => {
+            let tags_height = existing_tags.len().min(5) as u16;
+            8 + tags_height
+        }
+        _ => 5,
+    };
+    let modal_width = 55.min(area.width.saturating_sub(4));
+    let x = (area.width.saturating_sub(modal_width)) / 2;
+    let y = (area.height.saturating_sub(modal_height)) / 2;
+
+    let modal_area = Rect::new(x, y, modal_width, modal_height);
+
+    frame.render_widget(Clear, modal_area);
+
+    let (title, border_color) = match step {
+        TagStep::EnterName => (" Tag - Enter Name ", Color::Cyan),
+        TagStep::EnterMessage => (" Tag - Enter Message ", Color::Cyan),
+        TagStep::Creating => (" Creating Tag... ", Color::Yellow),
+        TagStep::AskPush => (" Push Tag? ", Color::Yellow),
+        TagStep::Pushing => (" Pushing Tag... ", Color::Yellow),
+        TagStep::Success => (" ✓ Tag Pushed ", Color::Green),
+        TagStep::Failed(_) => (" ✗ Tag Failed ", Color::Red),
+    };
+
+    let block = Block::default()
+        .title(title)
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(border_color));
+
+    let content: Vec<Line> = match step {
+        TagStep::EnterName => {
+            let mut lines = vec![];
+
+            // Show existing tags
+            if !existing_tags.is_empty() {
+                lines.push(Line::from(Span::styled(
+                    "  Recent tags:",
+                    Style::default().fg(Color::DarkGray),
+                )));
+                for tag in existing_tags.iter().take(5) {
+                    lines.push(Line::from(Span::styled(
+                        format!("    {}", tag),
+                        Style::default().fg(Color::DarkGray),
+                    )));
+                }
+                lines.push(Line::from(""));
+            }
+
+            // Name input with cursor
+            let display_name = if cursor < name.len() {
+                format!(
+                    "{}█{}",
+                    &name[..cursor],
+                    &name[cursor..]
+                )
+            } else {
+                format!("{}█", name)
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  Name: ", Style::default().fg(Color::White)),
+                Span::styled(display_name, Style::default().fg(Color::Yellow)),
+            ]));
+
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Enter:next ESC:cancel",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        TagStep::EnterMessage => {
+            let mut lines = vec![];
+
+            // Show the name
+            lines.push(Line::from(vec![
+                Span::styled("  Name: ", Style::default().fg(Color::DarkGray)),
+                Span::styled(name, Style::default().fg(Color::Yellow)),
+            ]));
+            lines.push(Line::from(""));
+
+            // Message input with cursor
+            let display_msg = if cursor < message.len() {
+                format!(
+                    "{}█{}",
+                    &message[..cursor],
+                    &message[cursor..]
+                )
+            } else {
+                format!("{}█", message)
+            };
+            lines.push(Line::from(vec![
+                Span::styled("  Message: ", Style::default().fg(Color::White)),
+                Span::styled(display_msg, Style::default().fg(Color::Cyan)),
+            ]));
+
+            lines.push(Line::from(Span::styled(
+                "  (optional - leave empty for lightweight tag)",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines.push(Line::from(""));
+            lines.push(Line::from(Span::styled(
+                "  Enter:create ESC:back",
+                Style::default().fg(Color::DarkGray),
+            )));
+            lines
+        }
+        TagStep::Creating => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  Creating tag '{}'...", name),
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        TagStep::AskPush => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  Tag '{}' created!", name),
+                    Style::default().fg(Color::Green),
+                )),
+                Line::from(""),
+                Line::from(vec![
+                    Span::raw("  Push to origin? "),
+                    Span::styled("y", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                    Span::raw("es / "),
+                    Span::styled("n", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                    Span::raw("o"),
+                ]),
+            ]
+        }
+        TagStep::Pushing => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  Pushing tag '{}'...", name),
+                    Style::default().fg(Color::Yellow),
+                )),
+            ]
+        }
+        TagStep::Success => {
+            vec![
+                Line::from(""),
+                Line::from(Span::styled(
+                    format!("  ✓ Tag '{}' pushed to origin!", name),
+                    Style::default().fg(Color::Green),
+                )),
+            ]
+        }
+        TagStep::Failed(msg) => {
             vec![
                 Line::from(""),
                 Line::from(Span::styled(

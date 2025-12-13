@@ -207,6 +207,18 @@ pub enum FetchStatus {
     Failed(String),
 }
 
+/// Status/step of tag operation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TagStep {
+    EnterName,
+    EnterMessage,
+    Creating,
+    AskPush,
+    Pushing,
+    Success,
+    Failed(String),
+}
+
 /// Input mode for special states
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InputMode {
@@ -217,6 +229,7 @@ pub enum InputMode {
     Push { remotes: Vec<String>, selected: usize, status: PushStatus },
     Pull { remotes: Vec<String>, selected: usize, status: PullStatus },
     Fetch { remotes: Vec<String>, selected: usize, status: FetchStatus },
+    Tag { name: String, message: String, cursor: usize, existing_tags: Vec<String>, step: TagStep },
     Confirm { message: String, action: ConfirmAction },
 }
 

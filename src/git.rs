@@ -541,4 +541,93 @@ impl GitRepo {
             Err(FussrError::Git(git2::Error::from_str("Failed to rename file")))
         }
     }
+
+    /// Fetch tags from remote
+    pub fn fetch_tags(&self) -> Result<()> {
+        let output = Command::new("git")
+            .args(["fetch", "--tags", "--quiet"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            // Silently ignore fetch errors - tags list will still work
+            Ok(())
+        }
+    }
+
+    /// Get list of existing tags (sorted by version, newest first)
+    pub fn get_tags(&self) -> Vec<String> {
+        let output = Command::new("git")
+            .args(["tag", "--sort=-version:refname"])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output();
+
+        match output {
+            Ok(o) if o.status.success() => {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .take(10) // Only show last 10 tags
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            }
+            _ => Vec::new(),
+        }
+    }
+
+    /// Create a new tag
+    pub fn create_tag(&self, name: &str, message: &str) -> Result<()> {
+        let output = if message.is_empty() {
+            // Lightweight tag
+            Command::new("git")
+                .args(["tag", name])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()?
+        } else {
+            // Annotated tag with message
+            Command::new("git")
+                .args(["tag", "-a", name, "-m", message])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .output()?
+        };
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("already exists") {
+                format!("Tag '{}' already exists", name)
+            } else {
+                format!("Failed to create tag '{}'", name)
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
+        }
+    }
+
+    /// Push a tag to origin
+    pub fn push_tag(&self, name: &str) -> Result<()> {
+        let output = Command::new("git")
+            .args(["push", "origin", name])
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .output()?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let msg = if stderr.contains("Could not read from remote") {
+                "Cannot reach origin - check connection/auth".to_string()
+            } else {
+                format!("Failed to push tag '{}'", name)
+            };
+            Err(FussrError::Git(git2::Error::from_str(&msg)))
+        }
+    }
 }

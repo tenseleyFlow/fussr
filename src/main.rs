@@ -94,6 +94,7 @@ fn run_event_loop(
                     InputMode::Push { .. } => handle_push_key(app, key.code)?,
                     InputMode::Pull { .. } => handle_pull_key(app, key.code)?,
                     InputMode::Fetch { .. } => handle_fetch_key(app, key.code)?,
+                    InputMode::Tag { .. } => handle_tag_key(app, key.code)?,
                     InputMode::Confirm { .. } => handle_confirm_key(app, key.code)?,
                 }
 
@@ -234,6 +235,9 @@ fn handle_navigation_key(app: &mut App, code: KeyCode, modifiers: KeyModifiers) 
         }
         KeyCode::Char('M') if app.mode == AppMode::Git => {
             app.enter_commit_mode(true); // amend
+        }
+        KeyCode::Char('t') if app.mode == AppMode::Git => {
+            app.enter_tag_mode();
         }
 
         _ => {}
@@ -497,6 +501,140 @@ fn handle_fetch_key(app: &mut App, code: KeyCode) -> Result<()> {
         FetchStatus::Success | FetchStatus::Failed(_) => {
             // Any key closes the modal
             app.close_fetch();
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle keys in tag mode
+fn handle_tag_key(app: &mut App, code: KeyCode) -> Result<()> {
+    use crate::types::TagStep;
+
+    let step = if let InputMode::Tag { step, .. } = &app.input_mode {
+        step.clone()
+    } else {
+        return Ok(());
+    };
+
+    match step {
+        TagStep::EnterName => {
+            match code {
+                KeyCode::Esc => {
+                    app.close_tag(false);
+                }
+                KeyCode::Enter => {
+                    // Check if name is non-empty before proceeding
+                    let has_name = if let InputMode::Tag { name, .. } = &app.input_mode {
+                        !name.trim().is_empty()
+                    } else {
+                        false
+                    };
+
+                    if has_name {
+                        // Move cursor to message field
+                        if let InputMode::Tag { step, cursor, .. } = &mut app.input_mode {
+                            *step = TagStep::EnterMessage;
+                            *cursor = 0;
+                        }
+                    }
+                }
+                KeyCode::Backspace => {
+                    if let InputMode::Tag { name, cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            name.remove(*cursor - 1);
+                            *cursor -= 1;
+                        }
+                    }
+                }
+                KeyCode::Left => {
+                    if let InputMode::Tag { cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            *cursor -= 1;
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if let InputMode::Tag { name, cursor, .. } = &mut app.input_mode {
+                        if *cursor < name.len() {
+                            *cursor += 1;
+                        }
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let InputMode::Tag { name, cursor, .. } = &mut app.input_mode {
+                        name.insert(*cursor, c);
+                        *cursor += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        TagStep::EnterMessage => {
+            match code {
+                KeyCode::Esc => {
+                    // Go back to name entry
+                    if let InputMode::Tag { step, name, cursor, .. } = &mut app.input_mode {
+                        *step = TagStep::EnterName;
+                        *cursor = name.len();
+                    }
+                }
+                KeyCode::Enter => {
+                    // Create the tag
+                    app.create_tag()?;
+                }
+                KeyCode::Backspace => {
+                    if let InputMode::Tag { message, cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            message.remove(*cursor - 1);
+                            *cursor -= 1;
+                        }
+                    }
+                }
+                KeyCode::Left => {
+                    if let InputMode::Tag { cursor, .. } = &mut app.input_mode {
+                        if *cursor > 0 {
+                            *cursor -= 1;
+                        }
+                    }
+                }
+                KeyCode::Right => {
+                    if let InputMode::Tag { message, cursor, .. } = &mut app.input_mode {
+                        if *cursor < message.len() {
+                            *cursor += 1;
+                        }
+                    }
+                }
+                KeyCode::Char(c) => {
+                    if let InputMode::Tag { message, cursor, .. } = &mut app.input_mode {
+                        message.insert(*cursor, c);
+                        *cursor += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        TagStep::Creating | TagStep::Pushing => {
+            // Don't respond to keys while creating/pushing
+        }
+        TagStep::AskPush => {
+            match code {
+                KeyCode::Char('y') | KeyCode::Char('Y') => {
+                    app.push_tag()?;
+                }
+                KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {
+                    app.close_tag(true);
+                }
+                _ => {}
+            }
+        }
+        TagStep::Success => {
+            // Any key closes
+            app.close_tag(true);
+        }
+        TagStep::Failed(_) => {
+            // Any key closes
+            app.close_tag(false);
         }
     }
 

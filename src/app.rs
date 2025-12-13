@@ -571,6 +571,92 @@ impl App {
         };
     }
 
+    /// Enter tag mode - fetches tags and shows modal
+    pub fn enter_tag_mode(&mut self) {
+        // Fetch tags from remote first (non-blocking, ignore errors)
+        let _ = self.repo.fetch_tags();
+
+        // Get existing tags
+        let existing_tags = self.repo.get_tags();
+
+        self.input_mode = InputMode::Tag {
+            name: String::new(),
+            message: String::new(),
+            cursor: 0,
+            existing_tags,
+            step: crate::types::TagStep::EnterName,
+        };
+    }
+
+    /// Create the tag with current name/message
+    pub fn create_tag(&mut self) -> Result<()> {
+        let (name, message) = if let InputMode::Tag { name, message, .. } = &self.input_mode {
+            (name.clone(), message.clone())
+        } else {
+            return Ok(());
+        };
+
+        if let InputMode::Tag { step, .. } = &mut self.input_mode {
+            *step = crate::types::TagStep::Creating;
+        }
+
+        match self.repo.create_tag(&name, &message) {
+            Ok(()) => {
+                if let InputMode::Tag { step, .. } = &mut self.input_mode {
+                    *step = crate::types::TagStep::AskPush;
+                }
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if let InputMode::Tag { step, .. } = &mut self.input_mode {
+                    *step = crate::types::TagStep::Failed(msg);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Push the tag to origin
+    pub fn push_tag(&mut self) -> Result<()> {
+        let name = if let InputMode::Tag { name, .. } = &self.input_mode {
+            name.clone()
+        } else {
+            return Ok(());
+        };
+
+        if let InputMode::Tag { step, .. } = &mut self.input_mode {
+            *step = crate::types::TagStep::Pushing;
+        }
+
+        match self.repo.push_tag(&name) {
+            Ok(()) => {
+                if let InputMode::Tag { step, .. } = &mut self.input_mode {
+                    *step = crate::types::TagStep::Success;
+                }
+                self.set_status(format!("Tag '{}' pushed to origin", name));
+                Ok(())
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if let InputMode::Tag { step, .. } = &mut self.input_mode {
+                    *step = crate::types::TagStep::Failed(msg);
+                }
+                Ok(())
+            }
+        }
+    }
+
+    /// Close tag modal (with success message if tag was created)
+    pub fn close_tag(&mut self, was_created: bool) {
+        if was_created {
+            if let InputMode::Tag { name, .. } = &self.input_mode {
+                self.set_status(format!("Tag '{}' created", name));
+            }
+        }
+        self.input_mode = InputMode::Navigation;
+    }
+
     /// Create a commit
     pub fn commit(&mut self, message: &str) -> Result<()> {
         self.repo.commit(message)?;
