@@ -408,6 +408,7 @@ fn draw_tag_modal(
             let tags_height = existing_tags.len().min(5) as u16;
             8 + tags_height
         }
+        TagStep::AskPush => 6,
         _ => 5,
     };
     let modal_width = 55.min(area.width.saturating_sub(4));
