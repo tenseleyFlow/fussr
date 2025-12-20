@@ -1,5 +1,5 @@
 Name:           fussr
-Version:        0.2.9
+Version:        0.2.11
 Release:        1%{?dist}
 Summary:        A git staging TUI tool - Rust port of fuss
 
@@ -33,7 +33,7 @@ Features:
 
 %build
 export CARGO_TARGET_DIR=target
-cargo build --release --locked
+cargo build --release
 
 %install
 install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
