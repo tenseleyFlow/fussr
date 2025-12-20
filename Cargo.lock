@@ -285,13 +285,12 @@ dependencies = [
 
 [[package]]
 name = "fussr"
-version = "0.2.4"
+version = "0.2.5"
 dependencies = [
  "anyhow",
  "clap",
  "crossterm",
  "git2",
- "libgit2-sys",
  "ratatui",
  "thiserror",
  "unicode-width 0.2.0",

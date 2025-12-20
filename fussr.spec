@@ -1,5 +1,5 @@
 Name:           fussr
-Version:        0.2.4
+Version:        0.2.5
 Release:        1%{?dist}
 Summary:        A git staging TUI tool - Rust port of fuss
 
