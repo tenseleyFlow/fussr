@@ -1,6 +1,6 @@
 [package]
 name = "fussr"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 description = "A git staging TUI tool - Rust port of fuss"
 authors = ["Matthew Wolffe"]
@@ -25,5 +25,4 @@ thiserror = "2.0"
 unicode-width = "0.2"
 
 [profile.release]
-lto = true
 strip = true
