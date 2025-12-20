@@ -1,6 +1,6 @@
 [package]
 name = "fussr"
-version = "0.1.0"
+version = "0.2.1"
 edition = "2021"
 description = "A git staging TUI tool - Rust port of fuss"
 authors = ["Matthew Wolffe"]
@@ -14,8 +14,8 @@ clap = { version = "4.5", features = ["derive"] }
 ratatui = "0.29"
 crossterm = "0.28"
 
-# Git operations
-git2 = "0.20"
+# Git operations (vendored-libgit2 bundles libgit2 for portable builds)
+git2 = { version = "0.20", features = ["vendored-libgit2"] }
 
 # Error handling
 anyhow = "1.0"
