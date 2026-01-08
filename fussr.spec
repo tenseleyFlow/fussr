@@ -41,7 +41,7 @@ install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
 %{_bindir}/%{name}
 
 %changelog
-* Wed Jan 08 2026 mfw <espadonne@outlook.com> - 0.2.13-1
+* Wed Jan 08 2025 mfw <espadonne@outlook.com> - 0.2.13-1
 - Update to version 0.2.13
 - Add zlib to link args for CachyOS/Arch compatibility
 - Fix link order for proper library placement
