@@ -7,7 +7,6 @@ License:        MIT
 URL:            https://github.com/tenseleyFlow/fussr
 Source0:        %{name}-%{version}.tar.gz
 
-BuildArch:      x86_64
 BuildRequires:  rust >= 1.70
 BuildRequires:  cargo
 
@@ -42,6 +41,12 @@ install -Dm755 target/release/%{name} %{buildroot}%{_bindir}/%{name}
 %{_bindir}/%{name}
 
 %changelog
+* Wed Jan 08 2026 mfw <espadonne@outlook.com> - 0.2.13-1
+- Update to version 0.2.13
+- Add zlib to link args for CachyOS/Arch compatibility
+- Fix link order for proper library placement
+- Multi-architecture support (aarch64, x86_64)
+
 * Fri Dec 13 2024 mfw <espadon@outlook.com> - 0.1.0-1
 - Initial RPM release of fussr
 - Git staging TUI tool - Rust port of fuss
